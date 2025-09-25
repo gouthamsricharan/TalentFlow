@@ -345,22 +345,8 @@ const SectionEditor = ({
         )}
       </div>
 
-      {/* Questions */}
-      <div className="space-y-4">
-        {section.questions.map((question, questionIndex) => (
-          <QuestionEditor
-            key={question.id}
-            question={question}
-            questionIndex={questionIndex}
-            onUpdate={(updates) => onUpdateQuestion(questionIndex, updates)}
-            onDelete={() => onDeleteQuestion(questionIndex)}
-            allQuestions={section.questions}
-          />
-        ))}
-      </div>
-
       {/* Add Question */}
-      <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded-lg">
+      <div className="mt-6 mb-4 p-4 border-2 border-dashed border-gray-300 rounded-lg">
         <p className="text-sm text-gray-600 mb-3">Add a new question:</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {QUESTION_TYPES.map((type) => {
@@ -381,6 +367,25 @@ const SectionEditor = ({
           })}
         </div>
       </div>
+      
+
+      {/* Questions */}
+      <div className="space-y-4">
+        {section.questions.map((question, questionIndex) => (
+          <QuestionEditor
+            key={question.id}
+            question={question}
+            questionIndex={questionIndex}
+            onUpdate={(updates) => onUpdateQuestion(questionIndex, updates)}
+            onDelete={() => onDeleteQuestion(questionIndex)}
+            allQuestions={section.questions}
+          />
+        ))}
+      </div>
+
+      
+
+
     </div>
   );
 };

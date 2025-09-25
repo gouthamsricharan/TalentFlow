@@ -9,6 +9,7 @@ export default function CandidateProfile() {
   const [timeline, setTimeline] = useState([])
   const [job, setJob] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [timelineLoading, setTimelineLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -22,6 +23,7 @@ export default function CandidateProfile() {
           const timelineData = await fetch(`/api/candidates/${candidateData.id}/timeline`).then(res => res.json())
           console.log('📊 Timeline data received:', timelineData)
           setTimeline(Array.isArray(timelineData) ? timelineData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)) : [])
+          setTimelineLoading(false)
         }
       } catch (error) {
         console.error('Failed to fetch candidate data:', error)
@@ -162,6 +164,12 @@ export default function CandidateProfile() {
             Progress Timeline
           </h2>
           
+          {timelineLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+              <span className="text-gray-500">Loading timeline...</span>
+            </div>
+          ) : (
           <div className="relative">
             {/* Progress Line */}
             <div className="absolute left-4 top-8 bottom-0 w-0.5 bg-gray-200"></div>
@@ -300,6 +308,7 @@ export default function CandidateProfile() {
               )}
             </div>
           </div>
+          )}
         </div>
 
 

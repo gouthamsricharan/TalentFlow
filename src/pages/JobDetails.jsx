@@ -12,28 +12,32 @@ export default function JobDetails() {
   const [assessments, setAssessments] = useState([])
   const [activeTab, setActiveTab] = useState('candidates')
   const [loading, setLoading] = useState(true)
+  const [candidatesLoading, setCandidatesLoading] = useState(true)
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         console.log('Fetching data for job ID:', id)
         
-        const [jobData, candidatesData, assessmentsData] = await Promise.all([
-          getJob(parseInt(id)),
-          getCandidatesByJob(parseInt(id)),
-          getAssessmentsByJob(parseInt(id))
-        ])
-        
-        console.log('Job data:', jobData)
-        console.log('Assessments found:', assessmentsData?.length || 0)
-        
+        const jobData = await getJob(parseInt(id))
         setJob(jobData)
+        setLoading(false)
+        
+        // Load candidates and assessments separately
+        const candidatesData = await getCandidatesByJob(parseInt(id))
         setCandidates(candidatesData)
+        setCandidatesLoading(false)
+        
+        const assessmentsData = await getAssessmentsByJob(parseInt(id))
+        console.log('Assessments found:', assessmentsData?.length || 0)
         setAssessments(assessmentsData || [])
+        setAssessmentsLoading(false)
       } catch (error) {
         console.error('Failed to fetch data:', error)
-      } finally {
         setLoading(false)
+        setCandidatesLoading(false)
+        setAssessmentsLoading(false)
       }
     }
 
@@ -156,7 +160,12 @@ export default function JobDetails() {
 
           {activeTab === 'candidates' && (
             <div>
-              {candidates.length === 0 ? (
+              {candidatesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+                  <span className="text-gray-500">Loading candidates...</span>
+                </div>
+              ) : candidates.length === 0 ? (
                 <p className="text-gray-500">No candidates for this job yet.</p>
               ) : (
                 <KanbanBoard 
@@ -205,7 +214,12 @@ export default function JobDetails() {
                 </div>
               </div>
               
-              {assessments.length === 0 ? (
+              {assessmentsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+                  <span className="text-gray-500">Loading assessments...</span>
+                </div>
+              ) : assessments.length === 0 ? (
                 <div className="text-center py-8">
                   <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Assessments Created</h3>

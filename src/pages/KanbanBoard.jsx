@@ -9,12 +9,12 @@ import { getAssessmentByJob, getCandidateTimeline } from '../db/index.js'
 import MentionInput, { renderTextWithMentions } from '../components/MentionInput'
 
 const stages = [
-  { id: 'applied', title: 'Applied', color: 'bg-gray-100' },
-  { id: 'screen', title: 'Screening', color: 'bg-blue-100' },
-  { id: 'tech', title: 'Technical', color: 'bg-yellow-100' },
-  { id: 'offer', title: 'Offer', color: 'bg-purple-100' },
-  { id: 'hired', title: 'Hired', color: 'bg-green-100' },
-  { id: 'rejected', title: 'Rejected', color: 'bg-red-100' }
+  { id: 'applied', title: 'Applied', color: 'bg-gradient-to-br from-gray-50 to-gray-100', icon: '📝' },
+  { id: 'screen', title: 'Screening', color: 'bg-gradient-to-br from-blue-50 to-blue-100', icon: '📞' },
+  { id: 'tech', title: 'Technical', color: 'bg-gradient-to-br from-yellow-50 to-yellow-100', icon: '💻' },
+  { id: 'offer', title: 'Offer', color: 'bg-gradient-to-br from-purple-50 to-purple-100', icon: '🎯' },
+  { id: 'hired', title: 'Hired', color: 'bg-gradient-to-br from-green-50 to-green-100', icon: '✅' },
+  { id: 'rejected', title: 'Rejected', color: 'bg-gradient-to-br from-red-50 to-red-100', icon: '❌' }
 ]
 
 function CandidateCard({ candidate, isReadOnly = false, jobId }) {
@@ -78,19 +78,19 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
       style={style}
       {...(isReadOnly ? {} : attributes)}
       {...(isReadOnly ? {} : listeners)}
-      className={`bg-white p-3 rounded-lg shadow-sm border transition-all min-w-[280px] ${
-        hasNotes ? 'border-l-4 border-l-blue-500 bg-blue-50' : ''
+      className={`bg-white p-3 rounded-2xl shadow-sm border border-gray-200/50 transition-all duration-300 min-w-[280px] hover:shadow-lg hover:-translate-y-1 ${
+        hasNotes ? 'border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-white' : 'hover:border-blue-200'
       } ${
-        isReadOnly ? 'cursor-default opacity-75' : 'cursor-grab hover:shadow-md'
-      }`}
+        isReadOnly ? 'cursor-default opacity-75' : 'cursor-grab active:cursor-grabbing hover:scale-[1.02]'
+      } ${isDragging ? 'shadow-2xl shadow-blue-500/20 scale-105 rotate-1' : ''}`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-medium text-gray-900 text-sm flex-1 mr-2">{candidate?.name || 'Unknown'}</h4>
+        <h4 className="font-semibold text-gray-900 text-base flex-1 mr-2">{candidate?.name || 'Unknown'}</h4>
         <div className="flex items-center space-x-1 flex-shrink-0">
           {assessment && candidate.stage === assessment.stage ? (
             assessment.hasSubmitted ? (
               <button
-                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-3 py-1.5 text-xs bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full hover:from-blue-600 hover:to-blue-700 font-medium shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -98,11 +98,11 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
                   window.location.href = route;
                 }}
               >
-                VIEW RESULTS
+                📊 RESULTS
               </button>
             ) : (
               <button
-                className="px-3 py-2 text-xs bg-green-600 text-white rounded hover:bg-green-700 font-bold border-2 border-green-800"
+                className="px-3 py-1.5 text-xs bg-gradient-to-r from-green-500 to-green-600 text-white rounded-full hover:from-green-600 hover:to-green-700 font-medium shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105 animate-pulse"
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -111,11 +111,11 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
                   window.location.href = route;
                 }}
               >
-                ASSESSMENT
+                📝 ASSESS
               </button>
             )
           ) : (
-            <span className="px-2 py-1 text-xs bg-gray-300 text-gray-600 rounded">No Assessment</span>
+            <span className="px-3 py-1.5 text-xs bg-gray-100 text-gray-500 rounded-full border border-gray-200">No Assessment</span>
           )}
           {hasNotes && (
             <div className="flex items-center space-x-1">
@@ -127,12 +127,12 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
           )}
         </div>
       </div>
-      <p className="text-xs text-gray-500 break-words mb-2">{candidate?.email || 'No email'}</p>
+      <p className="text-xs text-gray-600 break-words mb-2">{candidate?.email || 'No email'}</p>
       {latestNote && latestNote.trim() !== '' && !latestNote.startsWith('Moved to') && (
-        <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded border-l-2 border-blue-300 mt-2">
+        <div className="text-xs text-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 p-2 rounded-xl border border-blue-200/50 mt-2">
           <div className="flex items-center mb-1">
-            <Clock className="w-3 h-3 text-gray-400 mr-1" />
-            <span className="text-gray-400">Note:</span>
+            <MessageSquare className="w-3 h-3 text-blue-500 mr-1" />
+            <span className="text-blue-600 font-medium text-xs">Latest Note</span>
           </div>
           <div className="line-clamp-2">
             {renderTextWithMentions(latestNote)}
@@ -172,19 +172,25 @@ function StageColumn({ stage, candidates, searchTerm, onSearchChange, showSearch
   const paginatedCandidates = filteredCandidates.slice(startIndex, startIndex + itemsPerPage)
 
   return (
-    <div className={`${stage.color} p-4 rounded-lg h-full flex flex-col`} id={stage.id}>
-      <h3 className="font-semibold text-gray-900 mb-3">
-        {stage.title} ({filteredCandidates.length})
-      </h3>
+    <div className={`${stage.color} p-6 rounded-3xl h-full flex flex-col border border-gray-200/30 shadow-sm hover:shadow-md transition-all duration-300`} id={stage.id}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-gray-900 text-lg flex items-center">
+          <span className="text-2xl mr-2">{stage.icon}</span>
+          {stage.title}
+        </h3>
+        <span className="bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold text-gray-700 shadow-sm">
+          {filteredCandidates.length}
+        </span>
+      </div>
       {showSearch && (
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search candidates..."
             value={searchTerm}
             onChange={(e) => onSearchChange(stage.id, e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-2xl bg-white/80 backdrop-blur-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all duration-200"
           />
         </div>
       )}
@@ -211,10 +217,10 @@ function StageColumn({ stage, candidates, searchTerm, onSearchChange, showSearch
                 <button
                   key={pageNum}
                   onClick={() => onPageChange(stage.id, pageNum)}
-                  className={`w-6 h-6 text-xs rounded ${
+                  className={`w-8 h-8 text-xs rounded-full transition-all duration-200 ${
                     currentPage === pageNum 
-                      ? 'bg-orange-500 text-white' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md scale-110' 
+                      : 'bg-white/80 text-gray-700 hover:bg-blue-50 hover:text-blue-600 shadow-sm'
                   }`}
                 >
                   {pageNum}
