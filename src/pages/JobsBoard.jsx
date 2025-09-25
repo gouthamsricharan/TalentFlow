@@ -13,35 +13,54 @@ function SortableJobItem({ job, onEdit, onArchive }) {
   
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: isDragging ? 'none' : transition || 'transform 200ms ease',
+    opacity: isDragging ? 0.8 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div {...attributes} {...listeners} className="cursor-grab p-1 hover:bg-gray-100 rounded">
-              <GripVertical className="w-4 h-4 text-gray-400" />
+    <div ref={setNodeRef} style={style} className={`relative bg-gradient-to-br from-white to-gray-50/50 rounded-3xl shadow-sm border border-gray-200/50 hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1 transition-all duration-500 group overflow-hidden ${isDragging ? 'shadow-2xl shadow-blue-500/20 scale-105 rotate-1' : ''}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      <div className="relative p-6">
+        <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start space-x-4">
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-blue-500/10 rounded-2xl transition-all duration-300 mt-1">
+              <GripVertical className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
             </div>
-            <div className="flex-1">
-              <Link to={`/jobs/${job.id}`} className="text-xl font-semibold text-gray-900 hover:text-blue-600 transition-colors">
-                {job.title}
+            <div className="flex-1 min-w-0">
+              <Link to={`/jobs/${job.id}`} className="block">
+                <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors duration-300 leading-tight mb-2">
+                  {job.title}
+                </h3>
               </Link>
+              <div className="flex items-center space-x-3">
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                  job.status === 'active' 
+                    ? 'bg-green-500 text-white shadow-lg shadow-green-500/25' 
+                    : 'bg-gray-400 text-white shadow-lg shadow-gray-400/25'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full mr-2 ${
+                    job.status === 'active' ? 'bg-green-200 animate-pulse' : 'bg-gray-200'
+                  }`}></div>
+                  {job.status === 'active' ? 'ACTIVE' : 'ARCHIVED'}
+                </div>
+                <span className="text-xs text-gray-500 font-medium">
+                  {new Date(job.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
             <button 
               onClick={() => onEdit(job)} 
-              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all duration-200 hover:scale-110"
               title="Edit job"
             >
               <Edit className="w-4 h-4" />
             </button>
             <button 
               onClick={() => onArchive(job)} 
-              className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+              className="p-2.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-2xl transition-all duration-200 hover:scale-110"
               title={job.status === 'active' ? 'Archive job' : 'Activate job'}
             >
               <Archive className="w-4 h-4" />
@@ -49,31 +68,16 @@ function SortableJobItem({ job, onEdit, onArchive }) {
           </div>
         </div>
         
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-              job.status === 'active' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-gray-100 text-gray-600'
-            }`}>
-              {job.status === 'active' ? '🟢 Active' : '⚫ Archived'}
-            </span>
-          </div>
-          <span className="text-sm text-gray-500">
-            {new Date(job.createdAt).toLocaleDateString()}
-          </span>
-        </div>
-        
         {job.tags && job.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-4">
-            {job.tags.slice(0, 3).map(tag => (
-              <span key={tag} className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-md font-medium">
+          <div className="flex flex-wrap gap-2">
+            {job.tags.slice(0, 4).map(tag => (
+              <span key={tag} className="px-3 py-1.5 text-xs bg-white/80 backdrop-blur-sm text-gray-700 rounded-xl font-medium border border-gray-200/50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-all duration-200">
                 {tag}
               </span>
             ))}
-            {job.tags.length > 3 && (
-              <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md">
-                +{job.tags.length - 3} more
+            {job.tags.length > 4 && (
+              <span className="px-3 py-1.5 text-xs bg-gray-100/80 text-gray-500 rounded-xl font-medium border border-gray-200/50">
+                +{job.tags.length - 4}
               </span>
             )}
           </div>
@@ -150,11 +154,18 @@ export default function JobsBoard() {
     
     const originalJobs = [...jobs]
     const newJobs = arrayMove(jobs, oldIndex, newIndex)
-    setJobs(newJobs) // Optimistic update
+    
+    // Update order values based on new positions
+    const updatedJobs = newJobs.map((job, index) => ({
+      ...job,
+      order: index + 1
+    }))
+    
+    setJobs(updatedJobs) // Optimistic update
     
     try {
       const activeJob = jobs.find(job => job.id === active.id)
-      await apiClient.reorderJob(active.id, activeJob.order, newIndex)
+      await apiClient.reorderJob(active.id, activeJob.order, newIndex + 1)
     } catch (error) {
       setJobs(originalJobs) // Rollback on failure
       console.error('Failed to reorder jobs:', error)
@@ -298,7 +309,7 @@ export default function JobsBoard() {
             </button>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={jobs.map(job => job.id)} strategy={verticalListSortingStrategy}>
                 {jobs.map(job => (

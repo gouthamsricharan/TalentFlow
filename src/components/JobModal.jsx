@@ -73,59 +73,64 @@ export default function JobModal({ job, onSave, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-medium text-gray-900">
-            {job ? 'Edit Job' : 'Create Job'}
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
+    <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+      <div className="relative mx-auto max-w-md w-full bg-white rounded-2xl shadow-2xl border border-gray-100">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 rounded-t-2xl border-b border-gray-100">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold text-gray-900">
+              {job ? '✏️ Edit Job' : '✨ Create New Job'}
+            </h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 hover:bg-white rounded-full p-2 transition-all">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+        <div className="p-6">
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Title</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">💼 Job Title</label>
             <input
               type="text"
               value={formData.title}
               onChange={handleTitleChange}
-              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm ${
-                errors.title ? 'border-red-300' : ''
+              className={`w-full px-4 py-2.5 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                errors.title ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-blue-400 bg-gray-50 focus:bg-white'
               }`}
+              placeholder="e.g. Senior Frontend Developer"
             />
-            {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title}</p>}
+            {errors.title && <p className="mt-2 text-sm text-red-600 flex items-center">⚠️ {errors.title}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Slug</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">🔗 URL Slug</label>
             <input
               type="text"
               value={formData.slug}
               onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))}
-              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm ${
-                errors.slug ? 'border-red-300' : ''
+              className={`w-full px-4 py-2.5 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                errors.slug ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-blue-400 bg-gray-50 focus:bg-white'
               }`}
+              placeholder="senior-frontend-developer"
             />
-            {errors.slug && <p className="mt-1 text-sm text-red-600">{errors.slug}</p>}
+            {errors.slug && <p className="mt-2 text-sm text-red-600 flex items-center">⚠️ {errors.slug}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Status</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">🟢 Status</label>
             <select
               value={formData.status}
               onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+              className="w-full px-4 py-2.5 rounded-xl border-2 border-gray-200 bg-gray-50 focus:bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
             >
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
+              <option value="active">✨ Active</option>
+              <option value="archived">📦 Archived</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Tags</label>
-            <div className="flex mt-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">🏷️ Tags</label>
+            <div className="flex rounded-xl border-2 border-gray-200 bg-gray-50 focus-within:border-blue-400 focus-within:bg-white transition-all duration-200">
               <input
                 type="text"
                 value={tagInput}
@@ -136,28 +141,28 @@ export default function JobModal({ job, onSave, onClose }) {
                     addTag()
                   }
                 }}
-                className="flex-1 rounded-l-md border-gray-300 shadow-sm"
-                placeholder="Add tag..."
+                className="flex-1 px-4 py-2.5 bg-transparent border-0 focus:outline-none"
+                placeholder="React, TypeScript, Remote..."
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-md text-sm"
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-r-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200"
               >
                 Add
               </button>
             </div>
-            <div className="flex flex-wrap gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-3">
               {formData.tags.map(tag => (
                 <span
                   key={tag}
-                  className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                  className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border border-blue-200"
                 >
                   {tag}
                   <button
                     type="button"
                     onClick={() => removeTag(tag)}
-                    className="ml-1 text-blue-600 hover:text-blue-800"
+                    className="ml-2 text-blue-600 hover:text-blue-800 hover:bg-blue-200 rounded-full w-4 h-4 flex items-center justify-center text-xs transition-all"
                   >
                     ×
                   </button>
@@ -166,22 +171,23 @@ export default function JobModal({ job, onSave, onClose }) {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="px-6 py-2.5 border-2 border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             >
-              {job ? 'Update' : 'Create'}
+              {job ? '✨ Update Job' : '🚀 Create Job'}
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

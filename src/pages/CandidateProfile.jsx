@@ -302,44 +302,7 @@ export default function CandidateProfile() {
           </div>
         </div>
 
-        {/* Raw Timeline */}
-        <div className="px-6 py-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <MessageSquare className="w-5 h-5 mr-2" />
-            Activity Log ({timeline.length} entries)
-          </h2>
-          
-          {timeline.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No timeline entries yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {timeline.map((entry, index) => (
-                <div key={entry.id || index} className="flex space-x-4">
-                  <div className="flex-shrink-0">
-                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center ${getStageColor(entry?.stage || 'applied')}`}>
-                      <div className="w-2 h-2 rounded-full bg-current"></div>
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-900">
-                        Moved to {entry?.stage ? entry.stage.charAt(0).toUpperCase() + entry.stage.slice(1) : 'Applied'}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(entry.timestamp)}
-                      </p>
-                    </div>
-                    {entry.notes && entry.notes.trim() && (
-                      <div className="mt-2 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-700">{entry.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+
       </div>
     </div>
   )
