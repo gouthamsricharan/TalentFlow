@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Users, FileText, Plus } from 'lucide-react'
 import { getJob, getCandidatesByJob, getAssessmentsByJob, updateCandidate, addTimelineEntry } from '../db/index.js'
 import KanbanBoard from './KanbanBoard'
+import CandidateResponsesEmbed from '../components/CandidateResponsesEmbed'
 
 export default function JobDetails() {
   const { id } = useParams()
@@ -140,6 +141,17 @@ export default function JobDetails() {
               <FileText className="w-4 h-4 inline mr-2" />
               Assessments ({assessments.length})
             </button>
+            <button
+              onClick={() => setActiveTab('responses')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                activeTab === 'responses'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Users className="w-4 h-4 inline mr-2" />
+              Responses
+            </button>
           </div>
 
           {activeTab === 'candidates' && (
@@ -160,17 +172,37 @@ export default function JobDetails() {
             </div>
           )}
 
+          {activeTab === 'responses' && (
+            <CandidateResponsesEmbed jobId={id} />
+          )}
+
           {activeTab === 'assessment' && (
             <div>
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-medium text-gray-900">Assessments</h3>
-                <button
-                  onClick={createAssessment}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Assessment
-                </button>
+                <div className="flex space-x-3">
+                  <Link
+                    to={`/jobs/${id}/assessment/builder`}
+                    className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Assessment Builder
+                  </Link>
+                  <Link
+                    to={`/candidate-responses/${id}`}
+                    className="inline-flex items-center px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-medium hover:bg-orange-700"
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    View Responses
+                  </Link>
+                  <button
+                    onClick={createAssessment}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Quick Create
+                  </button>
+                </div>
               </div>
               
               {assessments.length === 0 ? (
@@ -223,30 +255,11 @@ export default function JobDetails() {
                         </ul>
                       </div>
                       
-                      {(() => {
-                        const stageCandidate = candidates.find(c => c.stage === assessment.stage);
-                        return stageCandidate ? (
-                          <div className="p-3 bg-green-50 rounded-lg">
-                            <h5 className="font-medium text-gray-900 mb-2">Test Assessment:</h5>
-                            <p className="text-xs text-gray-600 mb-2">
-                              Available for candidates in <span className="font-medium">{assessment.stage}</span> stage
-                            </p>
-                            <Link
-                              to={`/assessment/${assessment.id}/candidate/${stageCandidate.id}`}
-                              className="inline-flex items-center px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                            >
-                              Take Assessment (as {stageCandidate.name})
-                            </Link>
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-gray-50 rounded-lg">
-                            <h5 className="font-medium text-gray-900 mb-2">Test Assessment:</h5>
-                            <p className="text-xs text-gray-600">
-                              No candidates in <span className="font-medium">{assessment.stage}</span> stage to test with
-                            </p>
-                          </div>
-                        );
-                      })()}
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600">
+                          Available for candidates in <span className="font-medium">{assessment.stage}</span> stage
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>

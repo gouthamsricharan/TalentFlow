@@ -4,7 +4,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Search, MessageSquare, Clock, FileText } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { getAssessmentByJob, getCandidateTimeline } from '../db/index.js'
 import MentionInput, { renderTextWithMentions } from '../components/MentionInput'
 
@@ -18,6 +18,7 @@ const stages = [
 ]
 
 function CandidateCard({ candidate, isReadOnly = false, jobId }) {
+  const navigate = useNavigate()
   const [latestNote, setLatestNote] = useState('')
   const [hasNotes, setHasNotes] = useState(false)
   const [assessment, setAssessment] = useState(null)
@@ -41,11 +42,21 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
           setHasNotes(note.trim() !== '')
         }
 
-        // Fetch assessment for this job and stage
-        if (jobId) {
-          const assessmentData = await getAssessmentByJob(jobId, candidate.stage)
-          console.log('Assessment fetch for jobId:', jobId, 'stage:', candidate.stage, 'result:', assessmentData)
+        // Fetch assessment for this job (always use 'applied' stage)
+        const actualJobId = jobId || candidate.jobId
+        
+        if (actualJobId) {
+          const parsedJobId = parseInt(actualJobId)
+          const assessmentData = await getAssessmentByJob(parsedJobId, 'applied')
+          console.log(`Assessment check for job ${parsedJobId}:`, assessmentData ? 'Found' : 'Not found')
           setAssessment(assessmentData)
+          
+          // Check if candidate has submitted response
+          if (assessmentData) {
+            const { hasSubmittedResponse } = await import('../db/index.js')
+            const hasSubmitted = await hasSubmittedResponse(candidate.id, assessmentData.id)
+            setAssessment({...assessmentData, hasSubmitted})
+          }
         }
       } catch (error) {
         console.error('Failed to fetch data:', error)
@@ -67,32 +78,44 @@ function CandidateCard({ candidate, isReadOnly = false, jobId }) {
       style={style}
       {...(isReadOnly ? {} : attributes)}
       {...(isReadOnly ? {} : listeners)}
-      className={`bg-white p-3 rounded-lg shadow-sm border transition-all ${
+      className={`bg-white p-3 rounded-lg shadow-sm border transition-all min-w-[280px] ${
         hasNotes ? 'border-l-4 border-l-blue-500 bg-blue-50' : ''
       } ${
         isReadOnly ? 'cursor-default opacity-75' : 'cursor-grab hover:shadow-md'
       }`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-medium text-gray-900 text-sm">{candidate?.name || 'Unknown'}</h4>
-        <div className="flex items-center space-x-1">
-          {assessment ? (
-            <Link
-              to={`/assessment/${assessment.id}/candidate/${candidate.id}`}
-              className="text-green-600 hover:text-green-800"
-              title="Take Assessment"
-              onClick={(e) => {
-                console.log('Assessment link clicked:', {
-                  assessmentId: assessment.id,
-                  candidateId: candidate.id,
-                  route: `/assessment/${assessment.id}/candidate/${candidate.id}`
-                })
-              }}
-            >
-              <FileText className="w-4 h-4" />
-            </Link>
+        <h4 className="font-medium text-gray-900 text-sm flex-1 mr-2">{candidate?.name || 'Unknown'}</h4>
+        <div className="flex items-center space-x-1 flex-shrink-0">
+          {assessment && candidate.stage === assessment.stage ? (
+            assessment.hasSubmitted ? (
+              <button
+                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  const route = `/assessment-results/${assessment.id}/${candidate.id}`;
+                  window.location.href = route;
+                }}
+              >
+                VIEW RESULTS
+              </button>
+            ) : (
+              <button
+                className="px-3 py-2 text-xs bg-green-600 text-white rounded hover:bg-green-700 font-bold border-2 border-green-800"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  const route = `/take-assessment/${jobId || candidate.jobId}/${candidate.id}`;
+                  console.log('🚀 MOUSEDOWN - Navigating to:', route);
+                  window.location.href = route;
+                }}
+              >
+                ASSESSMENT
+              </button>
+            )
           ) : (
-            <FileText className="w-4 h-4 text-gray-300" title="No assessment available" />
+            <span className="px-2 py-1 text-xs bg-gray-300 text-gray-600 rounded">No Assessment</span>
           )}
           {hasNotes && (
             <div className="flex items-center space-x-1">

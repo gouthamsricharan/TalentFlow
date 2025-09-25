@@ -5,7 +5,7 @@ export const assessmentsDB = new Dexie('AssessmentsDB');
 assessmentsDB.version(1).stores({
   questionBank: '++id, type, category, tags, difficulty, question, options, correctAnswer',
   assessments: '++id, jobId, stage, title, sections, createdAt, updatedAt',
-  assessmentResponses: '++id, candidateId, jobId, stage, assessmentId, responses, submittedAt',
+  assessmentResponses: '++id, candidateId, jobId, stage, assessmentId, responses, submittedAt, [candidateId+assessmentId]',
   builderStates: '++id, jobId, state, lastModified'
 });
 
@@ -400,9 +400,6 @@ export const generateAssessmentForJob = async (job, stage = 'applied') => {
   const allManagerial = await assessmentsDB.questionBank.where('category').equals('management').toArray();
   const managerialQuestions = shuffleArray(allManagerial, seed + 2).slice(0, 7);
   
-  const allExperience = await assessmentsDB.questionBank.where('category').equals('experience').toArray();
-  const experienceQuestions = allExperience;
-  
   const assessment = {
     jobId: job.id,
     stage,
@@ -410,15 +407,14 @@ export const generateAssessmentForJob = async (job, stage = 'applied') => {
     sections: [
       { id: 1, title: 'Aptitude', questions: aptitudeQuestions },
       { id: 2, title: 'Technical', questions: technicalQuestions },
-      { id: 3, title: 'Management', questions: managerialQuestions },
-      { id: 4, title: 'Experience', questions: experienceQuestions }
+      { id: 3, title: 'Management', questions: managerialQuestions }
     ],
     createdAt: new Date(),
     updatedAt: new Date()
   };
   
   const assessmentId = await assessmentsDB.assessments.add(assessment);
-  console.log(`✅ Generated assessment for ${job.title}: ${aptitudeQuestions.length + technicalQuestions.length + managerialQuestions.length + experienceQuestions.length} questions`);
+  console.log(`✅ Generated assessment for ${job.title}: ${aptitudeQuestions.length + technicalQuestions.length + managerialQuestions.length} questions`);
   
   return { ...assessment, id: assessmentId };
 };
@@ -426,6 +422,62 @@ export const generateAssessmentForJob = async (job, stage = 'applied') => {
 export const seedAssessments = async (jobs) => {
   await seedQuestionBank();
   console.log(`✅ Generated focused question bank with role-based templates`);
+};
+
+export const seedAssessmentResponses = async (assessments, jobIds) => {
+  const responses = [];
+  
+  // Generate responses for 30% of candidates (300 out of 1000)
+  for (let i = 1; i <= 300; i++) {
+    const candidateId = i;
+    const jobId = jobIds[Math.floor(Math.random() * jobIds.length)];
+    const assessment = assessments.find(a => a.jobId === jobId);
+    
+    if (!assessment) continue;
+    
+    const candidateResponses = {};
+    
+    // Generate responses for each section
+    assessment.sections.forEach(section => {
+      section.questions.forEach(question => {
+        switch (question.type) {
+          case 'single-choice':
+            candidateResponses[question.id] = ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)];
+            break;
+          case 'multi-choice':
+            const options = ['A', 'B', 'C', 'D'].slice(0, Math.floor(Math.random() * 3) + 1);
+            candidateResponses[question.id] = options;
+            break;
+          case 'short-text':
+            candidateResponses[question.id] = 'Sample response text';
+            break;
+          case 'long-text':
+            candidateResponses[question.id] = 'This is a longer sample response with more detailed information about the candidate\'s experience and qualifications.';
+            break;
+          case 'numeric':
+            candidateResponses[question.id] = Math.floor(Math.random() * 10) + 1;
+            break;
+          case 'file-upload':
+            candidateResponses[question.id] = 'data:application/pdf;base64,JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVGl0bGUgKFNhbXBsZSBSZXN1bWUpCi9Qcm9kdWNlciAoU2FtcGxlKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMyAwIFIKPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFs0IDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAzIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0xlbmd0aCA0NAo+PgpzdHJlYW0KQlQKL0YxIDEyIFRmCjcyIDcyMCBUZAooU2FtcGxlIFJlc3VtZSkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iago=';
+            break;
+        }
+      });
+    });
+    
+    responses.push({
+      candidateId,
+      jobId,
+      stage: 'applied',
+      assessmentId: assessment.id,
+      responses: candidateResponses,
+      submittedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Random date within last 30 days
+      createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date()
+    });
+  }
+  
+  await assessmentsDB.assessmentResponses.bulkAdd(responses);
+  console.log(`✅ Generated ${responses.length} sample assessment responses`);
 };
 
 export const getAssessmentByJob = (jobId, stage = 'applied') => 
@@ -439,14 +491,31 @@ export const deleteAssessment = (id) => assessmentsDB.assessments.delete(id);
 export const getAssessment = (id) => assessmentsDB.assessments.get(id);
 export const saveAssessment = (assessment) => assessmentsDB.assessments.add(assessment);
 export const updateAssessment = (id, data) => assessmentsDB.assessments.update(id, { ...data, updatedAt: new Date() });
-export const saveResponse = (response) => assessmentsDB.assessmentResponses.add(response);
+export const saveResponse = (response) => {
+  // Mark as submitted with timestamp
+  const submittedResponse = {
+    ...response,
+    submittedAt: new Date(),
+    updatedAt: new Date()
+  };
+  return assessmentsDB.assessmentResponses.add(submittedResponse);
+};
+
+export const hasSubmittedResponse = async (candidateId, assessmentId) => {
+  const response = await assessmentsDB.assessmentResponses
+    .where('candidateId').equals(candidateId)
+    .and(r => r.assessmentId === assessmentId && r.submittedAt !== null && r.submittedAt !== undefined)
+    .first();
+  return !!response;
+};
 export const saveDraftResponse = async (candidateId, assessmentId, responses) => {
   console.log('Saving draft:', { candidateId, assessmentId, responses });
   
   // Delete any existing draft for this candidate/assessment
   await assessmentsDB.assessmentResponses
-    .where(['candidateId', 'assessmentId']).equals([candidateId, assessmentId])
-    .and(r => !r.submittedAt).delete();
+    .where('candidateId').equals(candidateId)
+    .and(r => r.assessmentId === assessmentId && !r.submittedAt)
+    .delete();
   
   // Create new draft
   const id = await assessmentsDB.assessmentResponses.add({
@@ -460,14 +529,20 @@ export const saveDraftResponse = async (candidateId, assessmentId, responses) =>
   console.log('Draft saved with ID:', id);
   return id;
 };
-export const getResponse = (candidateId, assessmentId) => 
-  assessmentsDB.assessmentResponses.where(['candidateId', 'assessmentId']).equals([candidateId, assessmentId]).first();
+export const getResponse = async (candidateId, assessmentId) => {
+  const responses = await assessmentsDB.assessmentResponses
+    .where('candidateId').equals(candidateId)
+    .and(r => r.assessmentId === assessmentId)
+    .first();
+  return responses;
+};
 
 export const getDraftResponse = async (candidateId, assessmentId) => {
   console.log('Getting draft for:', { candidateId, assessmentId });
   const draft = await assessmentsDB.assessmentResponses
-    .where(['candidateId', 'assessmentId']).equals([candidateId, assessmentId])
-    .and(r => !r.submittedAt).first();
+    .where('candidateId').equals(candidateId)
+    .and(r => r.assessmentId === assessmentId && !r.submittedAt)
+    .first();
   console.log('Found draft:', draft);
   return draft;
 };

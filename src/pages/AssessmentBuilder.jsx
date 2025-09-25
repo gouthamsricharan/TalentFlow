@@ -1,321 +1,314 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { 
+  Plus, 
+  Trash2, 
+  Eye, 
+  Save, 
+  ArrowLeft, 
+  GripVertical,
+  Settings,
+  FileText,
+  Hash,
+  Type,
+  AlignLeft,
+  CheckSquare,
+  Circle,
+  Upload
+} from 'lucide-react';
 import { getJob } from '../db/jobs';
 import { 
-  createDefaultAssessment, 
-  createQuestion, 
+  getAssessmentByJob, 
   saveAssessment, 
   updateAssessment,
-  getAssessmentByJob,
   saveBuilderState,
-  getBuilderState,
-  validateResponse,
-  shouldShowQuestion
+  getBuilderState 
 } from '../db/assessments';
+
+const QUESTION_TYPES = [
+  { id: 'single-choice', label: 'Single Choice', icon: Circle, description: 'Radio buttons - one answer' },
+  { id: 'multi-choice', label: 'Multiple Choice', icon: CheckSquare, description: 'Checkboxes - multiple answers' },
+  { id: 'short-text', label: 'Short Text', icon: Type, description: 'Single line input' },
+  { id: 'long-text', label: 'Long Text', icon: AlignLeft, description: 'Multi-line textarea' },
+  { id: 'numeric', label: 'Numeric', icon: Hash, description: 'Number input with range' },
+  { id: 'file-upload', label: 'File Upload', icon: Upload, description: 'File attachment' }
+];
+
+const createQuestion = (type = 'single-choice') => ({
+  id: Date.now() + Math.random(),
+  type,
+  question: '',
+  required: false,
+  validation: {},
+  conditional: null,
+  ...(type === 'single-choice' || type === 'multi-choice' ? { options: ['Option 1', 'Option 2'] } : {}),
+  ...(type === 'short-text' ? { validation: { maxLength: 100 } } : {}),
+  ...(type === 'long-text' ? { validation: { maxLength: 500 } } : {}),
+  ...(type === 'numeric' ? { validation: { min: 0, max: 100 } } : {}),
+  ...(type === 'file-upload' ? { validation: { allowedTypes: ['.pdf', '.doc', '.docx'] } } : {})
+});
+
+const createSection = () => ({
+  id: Date.now() + Math.random(),
+  title: 'New Section',
+  questions: []
+});
 
 const AssessmentBuilder = () => {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
-  const [assessment, setAssessment] = useState(null);
+  const [assessment, setAssessment] = useState({
+    title: '',
+    sections: [createSection()]
+  });
   const [activeSection, setActiveSection] = useState(0);
-  const [previewMode, setPreviewMode] = useState(false);
-  const [fullPreview, setFullPreview] = useState(false);
-  const [previewResponses, setPreviewResponses] = useState({});
-  const [validationErrors, setValidationErrors] = useState({});
+  const [showPreview, setShowPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
 
   useEffect(() => {
     loadData();
   }, [jobId]);
 
+  useEffect(() => {
+    // Auto-save every 30 seconds
+    const interval = setInterval(() => {
+      if (assessment.title || assessment.sections.some(s => s.questions.length > 0)) {
+        saveBuilderState(parseInt(jobId), assessment);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [assessment, jobId]);
+
   const loadData = async () => {
-    const jobData = await getJob(parseInt(jobId));
-    setJob(jobData);
+    try {
+      const jobData = await getJob(parseInt(jobId));
+      setJob(jobData);
 
-    // Force reset assessment database to load new questions
-    const { resetAssessmentDatabase } = await import('../utils/resetDatabase');
-    await resetAssessmentDatabase();
+      // Try to load existing assessment
+      const existingAssessment = await getAssessmentByJob(parseInt(jobId), 'applied');
+      if (existingAssessment) {
+        setAssessment(existingAssessment);
+        return;
+      }
 
-    // Create fresh assessment with new question bank
-    const assessmentData = await createDefaultAssessment(parseInt(jobId), jobData.title);
-    setAssessment(assessmentData);
+      // Try to load builder state
+      const builderState = await getBuilderState(parseInt(jobId));
+      if (builderState) {
+        setAssessment(builderState.state);
+        return;
+      }
+
+      // Initialize new assessment
+      setAssessment({
+        title: `${jobData.title} Assessment`,
+        sections: [createSection()]
+      });
+    } catch (error) {
+      console.error('Error loading assessment data:', error);
+    }
   };
 
-  const saveState = async () => {
-    await saveBuilderState(parseInt(jobId), assessment);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const assessmentData = {
+        ...assessment,
+        jobId: parseInt(jobId),
+        stage: 'applied',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      const existingAssessment = await getAssessmentByJob(parseInt(jobId), 'applied');
+      if (existingAssessment) {
+        await updateAssessment(existingAssessment.id, assessmentData);
+      } else {
+        await saveAssessment(assessmentData);
+      }
+
+      setLastSaved(new Date());
+      alert('Assessment saved successfully!');
+    } catch (error) {
+      alert('Error saving assessment. Please try again.');
+      console.error('Save error:', error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const addSection = () => {
-    const newSection = {
-      id: Date.now(),
-      title: `Section ${assessment.sections.length + 1}`,
-      questions: []
-    };
     setAssessment(prev => ({
       ...prev,
-      sections: [...prev.sections, newSection]
+      sections: [...prev.sections, createSection()]
     }));
   };
 
-  const updateSection = (sectionIndex, field, value) => {
+  const updateSection = (sectionIndex, updates) => {
     setAssessment(prev => ({
       ...prev,
       sections: prev.sections.map((section, index) => 
-        index === sectionIndex ? { ...section, [field]: value } : section
+        index === sectionIndex ? { ...section, ...updates } : section
       )
     }));
   };
 
   const deleteSection = (sectionIndex) => {
+    if (assessment.sections.length === 1) return;
     setAssessment(prev => ({
       ...prev,
       sections: prev.sections.filter((_, index) => index !== sectionIndex)
     }));
     if (activeSection >= assessment.sections.length - 1) {
-      setActiveSection(Math.max(0, assessment.sections.length - 2));
+      setActiveSection(Math.max(0, activeSection - 1));
     }
   };
 
   const addQuestion = (sectionIndex, type = 'single-choice') => {
     const newQuestion = createQuestion(type);
-    setAssessment(prev => ({
-      ...prev,
-      sections: prev.sections.map((section, index) => 
-        index === sectionIndex 
-          ? { ...section, questions: [newQuestion, ...section.questions] }
-          : section
-      )
-    }));
+    updateSection(sectionIndex, {
+      questions: [...assessment.sections[sectionIndex].questions, newQuestion]
+    });
   };
 
-  const updateQuestion = (sectionIndex, questionIndex, field, value) => {
-    setAssessment(prev => ({
-      ...prev,
-      sections: prev.sections.map((section, sIndex) => 
-        sIndex === sectionIndex 
-          ? {
-              ...section,
-              questions: section.questions.map((question, qIndex) => 
-                qIndex === questionIndex ? { ...question, [field]: value } : question
-              )
-            }
-          : section
-      )
-    }));
+  const updateQuestion = (sectionIndex, questionIndex, updates) => {
+    const section = assessment.sections[sectionIndex];
+    const updatedQuestions = section.questions.map((question, index) =>
+      index === questionIndex ? { ...question, ...updates } : question
+    );
+    updateSection(sectionIndex, { questions: updatedQuestions });
   };
 
   const deleteQuestion = (sectionIndex, questionIndex) => {
-    setAssessment(prev => ({
-      ...prev,
-      sections: prev.sections.map((section, sIndex) => 
-        sIndex === sectionIndex 
-          ? { ...section, questions: section.questions.filter((_, qIndex) => qIndex !== questionIndex) }
-          : section
-      )
-    }));
+    const section = assessment.sections[sectionIndex];
+    const updatedQuestions = section.questions.filter((_, index) => index !== questionIndex);
+    updateSection(sectionIndex, { questions: updatedQuestions });
   };
 
-  const reorderQuestion = (sectionIndex, fromIndex, toIndex) => {
-    setAssessment(prev => ({
-      ...prev,
-      sections: prev.sections.map((section, sIndex) => {
-        if (sIndex === sectionIndex) {
-          const questions = [...section.questions];
-          const [moved] = questions.splice(fromIndex, 1);
-          questions.splice(toIndex, 0, moved);
-          return { ...section, questions };
-        }
-        return section;
-      })
-    }));
-  };
-
-  const handlePreviewResponse = (questionId, value) => {
-    setPreviewResponses(prev => ({ ...prev, [questionId]: value }));
-    
-    // Add years experience question if experience is Yes
-    if (questionId === 'experience-field' && value === 'Yes') {
-      const experienceSection = assessment.sections.find(s => s.title === 'Experience');
-      if (experienceSection && !experienceSection.questions.find(q => q.id === 'years-experience')) {
-        const yearsQuestion = {
-          id: 'years-experience',
-          type: 'numeric',
-          question: 'How many years of experience do you have in this field?',
-          required: true,
-          validation: { min: 0, max: 50 },
-          conditional: { dependsOn: 'experience-field', condition: 'equals', value: 'Yes' }
-        };
-        
-        setAssessment(prev => ({
-          ...prev,
-          sections: prev.sections.map(section => 
-            section.title === 'Experience' 
-              ? { ...section, questions: [...section.questions, yearsQuestion] }
-              : section
-          )
-        }));
-      }
-    }
-    
-    // Validate response
-    const question = findQuestionById(questionId);
-    if (question) {
-      const errors = validateResponse(question, value);
-      setValidationErrors(prev => ({
-        ...prev,
-        [questionId]: errors.length > 0 ? errors : undefined
-      }));
-    }
-  };
-
-  const findQuestionById = (questionId) => {
-    for (const section of assessment.sections) {
-      const question = section.questions.find(q => q.id === questionId);
-      if (question) return question;
-    }
-    return null;
-  };
-
-  const saveAssessmentData = async () => {
-    try {
-      if (assessment.id) {
-        await updateAssessment(assessment.id, assessment);
-      } else {
-        const savedAssessment = await saveAssessment(assessment);
-        setAssessment(prev => ({ ...prev, id: savedAssessment.id }));
-      }
-      alert('Assessment saved successfully!');
-    } catch (error) {
-      alert('Error saving assessment');
-    }
-  };
-
-  if (!job || !assessment) return <div className="p-8">Loading...</div>;
+  if (!job) {
+    return <div className="p-8">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="bg-white shadow-sm border rounded-lg mb-6 p-6">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <button 
+            <div className="flex items-center space-x-4">
+              <button
                 onClick={() => navigate(`/jobs/${jobId}`)}
-                className="text-blue-600 hover:text-blue-800 mb-2"
+                className="p-2 hover:bg-gray-100 rounded-lg"
               >
-                ← Back to Job
+                <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">Assessment Builder</h1>
-              <div className="flex items-center gap-4 mt-2">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Assessment Builder</h1>
                 <p className="text-gray-600">{job.title}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Stage:</span>
-                  <select
-                    value={assessment.stage || 'applied'}
-                    onChange={(e) => setAssessment(prev => ({ ...prev, stage: e.target.value }))}
-                    className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="select">Select</option>
-                    <option value="applied">Applied</option>
-                    <option value="screen">Screen</option>
-                    <option value="tech">Technical</option>
-                    <option value="offer">Offer</option>
-                  </select>
-                </div>
               </div>
             </div>
-            <div className="flex gap-3">
+            <div className="flex items-center space-x-3">
+              {lastSaved && (
+                <span className="text-sm text-gray-500">
+                  Saved {lastSaved.toLocaleTimeString()}
+                </span>
+              )}
               <button
-                onClick={saveState}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                onClick={() => setShowPreview(!showPreview)}
+                className="flex items-center px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
-                Save Draft
+                <Eye className="w-4 h-4 mr-2" />
+                {showPreview ? 'Hide Preview' : 'Preview'}
               </button>
               <button
-                onClick={saveAssessmentData}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                Publish
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-6">
+      </div>
+
+      <div className="max-w-7xl mx-auto p-6">
+        <div className={`grid gap-6 ${showPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {/* Builder Panel */}
-          <div className="bg-white rounded-lg shadow-sm">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <input
-                  type="text"
-                  value={assessment.title}
-                  onChange={(e) => setAssessment(prev => ({ ...prev, title: e.target.value }))}
-                  className="text-xl font-bold bg-transparent border-none outline-none"
-                  placeholder="Assessment Title"
-                />
-                <button
-                  onClick={addSection}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Add Section
-                </button>
-              </div>
+          <div className="space-y-6">
+            {/* Assessment Title */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Assessment Title
+              </label>
+              <input
+                type="text"
+                value={assessment.title}
+                onChange={(e) => setAssessment(prev => ({ ...prev, title: e.target.value }))}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter assessment title..."
+              />
+            </div>
 
+            {/* Sections */}
+            <div className="bg-white rounded-lg shadow-sm">
               {/* Section Tabs */}
-              <div className="flex border-b mb-6">
-                {assessment.sections.map((section, index) => (
+              <div className="border-b p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Sections</h3>
                   <button
-                    key={section.id}
-                    onClick={() => setActiveSection(index)}
-                    className={`px-4 py-2 font-medium ${
-                      activeSection === index
-                        ? 'border-b-2 border-blue-600 text-blue-600'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
+                    onClick={addSection}
+                    className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    {section.title}
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Section
                   </button>
-                ))}
+                </div>
+                <div className="flex space-x-1">
+                  {assessment.sections.map((section, index) => (
+                    <button
+                      key={section.id}
+                      onClick={() => setActiveSection(index)}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        index === activeSection
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {section.title}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Active Section */}
+              {/* Active Section Content */}
               {assessment.sections[activeSection] && (
                 <SectionEditor
                   section={assessment.sections[activeSection]}
                   sectionIndex={activeSection}
-                  onUpdateSection={updateSection}
-                  onDeleteSection={deleteSection}
-                  onAddQuestion={addQuestion}
-                  onUpdateQuestion={updateQuestion}
-                  onDeleteQuestion={deleteQuestion}
-                  onReorderQuestion={reorderQuestion}
-                  allQuestions={assessment.sections.flatMap(s => s.questions)}
+                  onUpdateSection={(updates) => updateSection(activeSection, updates)}
+                  onDeleteSection={() => deleteSection(activeSection)}
+                  onAddQuestion={(type) => addQuestion(activeSection, type)}
+                  onUpdateQuestion={(questionIndex, updates) => updateQuestion(activeSection, questionIndex, updates)}
+                  onDeleteQuestion={(questionIndex) => deleteQuestion(activeSection, questionIndex)}
+                  canDelete={assessment.sections.length > 1}
                 />
               )}
             </div>
           </div>
 
           {/* Preview Panel */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold">Live Preview</h2>
-              <button
-                onClick={() => setFullPreview(!fullPreview)}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  fullPreview 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {fullPreview ? 'Section Only' : 'Full Preview'}
-              </button>
+          {showPreview && (
+            <div className="bg-white rounded-lg shadow-sm">
+              <div className="p-4 border-b">
+                <h3 className="text-lg font-semibold">Live Preview</h3>
+              </div>
+              <AssessmentPreview assessment={assessment} />
             </div>
-            <AssessmentPreview
-              assessment={assessment}
-              activeSection={fullPreview ? null : activeSection}
-              responses={previewResponses}
-              validationErrors={validationErrors}
-              onResponseChange={handlePreviewResponse}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -330,369 +323,419 @@ const SectionEditor = ({
   onAddQuestion, 
   onUpdateQuestion, 
   onDeleteQuestion,
-  onReorderQuestion,
-  allQuestions 
+  canDelete 
 }) => {
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const menuRef = useRef(null);
-  
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setShowAddMenu(false);
-      }
-    };
-    
-    if (showAddMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showAddMenu]);
-  
-  const questionTypes = [
-    { value: 'single-choice', label: 'Single Choice', icon: '◉' },
-    { value: 'multi-choice', label: 'Multiple Choice', icon: '☑' },
-    { value: 'short-text', label: 'Short Text', icon: '📝' },
-    { value: 'long-text', label: 'Long Text', icon: '📄' },
-    { value: 'numeric', label: 'Number', icon: '#' },
-    { value: 'file-upload', label: 'File Upload', icon: '📎' }
-  ];
-
-  const handleAddQuestion = (type) => {
-    onAddQuestion(sectionIndex, type);
-    setShowAddMenu(false);
-  };
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-6">
+      {/* Section Header */}
+      <div className="flex items-center justify-between mb-6">
         <input
           type="text"
           value={section.title}
-          onChange={(e) => onUpdateSection(sectionIndex, 'title', e.target.value)}
-          className="text-lg font-semibold bg-transparent border-none outline-none"
+          onChange={(e) => onUpdateSection({ title: e.target.value })}
+          className="text-lg font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
         />
-        <div className="flex gap-2">
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setShowAddMenu(!showAddMenu)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
-            >
-              <span className={`transition-transform ${showAddMenu ? 'rotate-45' : ''}`}>+</span> 
-              Add Question
-            </button>
-            
-            {showAddMenu && (
-              <div className="absolute top-full right-0 mt-1 bg-white border rounded-lg shadow-lg z-10 min-w-48">
-                <div className="p-2">
-                  <div className="text-xs font-medium text-gray-500 mb-2 px-2">Choose Question Type:</div>
-                  {questionTypes.map(type => (
-                    <button
-                      key={type.value}
-                      onClick={() => handleAddQuestion(type.value)}
-                      className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded flex items-center gap-3 text-sm transition-colors"
-                    >
-                      <span className="text-lg">{type.icon}</span>
-                      <span>{type.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        {canDelete && (
           <button
-            onClick={() => onDeleteSection(sectionIndex)}
-            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+            onClick={onDeleteSection}
+            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
           >
-            Delete Section
+            <Trash2 className="w-4 h-4" />
           </button>
-        </div>
+        )}
       </div>
 
+      {/* Questions */}
       <div className="space-y-4">
         {section.questions.map((question, questionIndex) => (
           <QuestionEditor
             key={question.id}
             question={question}
-            sectionIndex={sectionIndex}
             questionIndex={questionIndex}
-            onUpdateQuestion={onUpdateQuestion}
-            onDeleteQuestion={onDeleteQuestion}
-            onReorderQuestion={onReorderQuestion}
-            sectionQuestions={section.questions}
-            allQuestions={allQuestions}
+            onUpdate={(updates) => onUpdateQuestion(questionIndex, updates)}
+            onDelete={() => onDeleteQuestion(questionIndex)}
+            allQuestions={section.questions}
           />
         ))}
+      </div>
+
+      {/* Add Question */}
+      <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded-lg">
+        <p className="text-sm text-gray-600 mb-3">Add a new question:</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {QUESTION_TYPES.map((type) => {
+            const Icon = type.icon;
+            return (
+              <button
+                key={type.id}
+                onClick={() => onAddQuestion(type.id)}
+                className="flex items-center p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300"
+              >
+                <Icon className="w-4 h-4 mr-2 text-gray-600" />
+                <div>
+                  <div className="text-sm font-medium">{type.label}</div>
+                  <div className="text-xs text-gray-500">{type.description}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 };
 
-const QuestionEditor = ({ 
-  question, 
-  sectionIndex, 
-  questionIndex, 
-  onUpdateQuestion, 
-  onDeleteQuestion,
-  onReorderQuestion,
-  sectionQuestions,
-  allQuestions 
-}) => {
-  const updateField = (field, value) => {
-    onUpdateQuestion(sectionIndex, questionIndex, field, value);
+const QuestionEditor = ({ question, questionIndex, onUpdate, onDelete, allQuestions }) => {
+  const [showSettings, setShowSettings] = useState(false);
+
+  const addOption = () => {
+    const newOptions = [...(question.options || []), `Option ${(question.options?.length || 0) + 1}`];
+    onUpdate({ options: newOptions });
   };
 
-  const updateValidation = (field, value) => {
-    onUpdateQuestion(sectionIndex, questionIndex, 'validation', {
-      ...question.validation,
-      [field]: value
-    });
+  const updateOption = (optionIndex, value) => {
+    const newOptions = question.options.map((option, index) =>
+      index === optionIndex ? value : option
+    );
+    onUpdate({ options: newOptions });
   };
 
-  const updateConditional = (field, value) => {
-    onUpdateQuestion(sectionIndex, questionIndex, 'conditional', {
-      ...question.conditional,
-      [field]: value
-    });
+  const deleteOption = (optionIndex) => {
+    if (question.options.length <= 2) return;
+    const newOptions = question.options.filter((_, index) => index !== optionIndex);
+    onUpdate({ options: newOptions });
   };
 
   return (
-    <div className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start gap-3 mb-4">
-        <div className="flex flex-col gap-1 mt-2">
+    <div className="border border-gray-200 rounded-lg p-4">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center space-x-2">
+          <GripVertical className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-600">Q{questionIndex + 1}</span>
+          <span className="text-xs px-2 py-1 bg-gray-100 rounded">
+            {QUESTION_TYPES.find(t => t.id === question.type)?.label}
+          </span>
+        </div>
+        <div className="flex items-center space-x-2">
           <button
-            onClick={() => questionIndex > 0 && onReorderQuestion(sectionIndex, questionIndex, questionIndex - 1)}
-            disabled={questionIndex === 0}
-            className="w-8 h-8 flex items-center justify-center text-sm bg-blue-50 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed rounded-lg border border-blue-200 disabled:border-gray-200 transition-colors"
-            title="Move up"
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-1 text-gray-400 hover:text-gray-600"
           >
-            ↑
+            <Settings className="w-4 h-4" />
           </button>
           <button
-            onClick={() => questionIndex < sectionQuestions.length - 1 && onReorderQuestion(sectionIndex, questionIndex, questionIndex + 1)}
-            disabled={questionIndex === sectionQuestions.length - 1}
-            className="w-8 h-8 flex items-center justify-center text-sm bg-blue-50 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed rounded-lg border border-blue-200 disabled:border-gray-200 transition-colors"
-            title="Move down"
+            onClick={onDelete}
+            className="p-1 text-red-400 hover:text-red-600"
           >
-            ↓
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-medium text-gray-500">Q{questionIndex + 1}</span>
-            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
-              {question.type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-            </span>
-          </div>
-          <input
-            type="text"
-            value={question.question}
-            onChange={(e) => updateField('question', e.target.value)}
-            placeholder="Enter your question"
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-          />
-        </div>
-        <button
-          onClick={() => onDeleteQuestion(sectionIndex, questionIndex)}
-          className="mt-8 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-colors text-sm font-medium"
-        >
-          Delete
-        </button>
+      </div>
+
+      {/* Question Text */}
+      <div className="mb-4">
+        <textarea
+          value={question.question}
+          onChange={(e) => onUpdate({ question: e.target.value })}
+          placeholder="Enter your question..."
+          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          rows={2}
+        />
       </div>
 
       {/* Question Type Specific Fields */}
       {(question.type === 'single-choice' || question.type === 'multi-choice') && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Options:</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
           <div className="space-y-2">
-            {question.options.map((option, index) => (
-              <div key={index} className="flex gap-2">
+            {question.options?.map((option, index) => (
+              <div key={index} className="flex items-center space-x-2">
                 <input
                   type="text"
                   value={option}
-                  onChange={(e) => {
-                    const newOptions = [...question.options];
-                    newOptions[index] = e.target.value;
-                    updateField('options', newOptions);
-                  }}
-                  className="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder={`Option ${index + 1}`}
+                  onChange={(e) => updateOption(index, e.target.value)}
+                  className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <button
-                  onClick={() => {
-                    const newOptions = question.options.filter((_, i) => i !== index);
-                    updateField('options', newOptions);
-                  }}
-                  className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 text-sm"
-                >
-                  Remove
-                </button>
+                {question.options.length > 2 && (
+                  <button
+                    onClick={() => deleteOption(index)}
+                    className="p-2 text-red-400 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
+            <button
+              onClick={addOption}
+              className="flex items-center px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Option
+            </button>
           </div>
-          <button
-            onClick={() => updateField('options', [...question.options, `Option ${question.options.length + 1}`])}
-            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-          >
-            + Add Option
-          </button>
         </div>
       )}
 
-      {/* Validation Rules */}
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Validation Rules</h4>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="flex items-center p-2 bg-white rounded border">
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+          <div className="flex items-center">
             <input
               type="checkbox"
+              id={`required-${question.id}`}
               checked={question.required}
-              onChange={(e) => updateField('required', e.target.checked)}
-              className="mr-2 text-blue-600 focus:ring-blue-500"
+              onChange={(e) => onUpdate({ required: e.target.checked })}
+              className="mr-2"
             />
-            <span className="text-sm">Required</span>
-          </label>
+            <label htmlFor={`required-${question.id}`} className="text-sm">
+              Required field
+            </label>
+          </div>
 
-          {(question.type === 'short-text' || question.type === 'long-text') && (
+          {/* Validation Settings */}
+          {question.type === 'short-text' || question.type === 'long-text' ? (
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Max Length:</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Max Length
+              </label>
               <input
                 type="number"
                 value={question.validation?.maxLength || ''}
-                onChange={(e) => updateValidation('maxLength', parseInt(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Characters"
+                onChange={(e) => onUpdate({ 
+                  validation: { ...question.validation, maxLength: parseInt(e.target.value) || undefined }
+                })}
+                className="w-24 p-2 border border-gray-300 rounded"
+                min="1"
               />
             </div>
-          )}
-
-          {question.type === 'numeric' && (
-            <>
+          ) : question.type === 'numeric' ? (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Min Value:</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Min Value
+                </label>
                 <input
                   type="number"
                   value={question.validation?.min || ''}
-                  onChange={(e) => updateValidation('min', parseFloat(e.target.value))}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => onUpdate({ 
+                    validation: { ...question.validation, min: parseFloat(e.target.value) || undefined }
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Max Value:</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Value
+                </label>
                 <input
                   type="number"
                   value={question.validation?.max || ''}
-                  onChange={(e) => updateValidation('max', parseFloat(e.target.value))}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => onUpdate({ 
+                    validation: { ...question.validation, max: parseFloat(e.target.value) || undefined }
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded"
                 />
               </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Conditional Logic */}
-      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-        <label className="flex items-center p-2 bg-white rounded border mb-3">
-          <input
-            type="checkbox"
-            checked={!!question.conditional}
-            onChange={(e) => {
-              if (e.target.checked) {
-                updateField('conditional', { dependsOn: '', condition: 'equals', value: '' });
-              } else {
-                updateField('conditional', null);
-              }
-            }}
-            className="mr-2 text-yellow-600 focus:ring-yellow-500"
-          />
-          <span className="text-sm font-medium">Conditional Question</span>
-        </label>
-
-        {question.conditional && (
-          <div className="space-y-3">
-            <div className="text-xs text-yellow-700 mb-2">Show this question only when:</div>
-            <div className="grid grid-cols-3 gap-3">
-              <select
-                value={question.conditional.dependsOn || ''}
-                onChange={(e) => updateConditional('dependsOn', e.target.value)}
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-              >
-                <option value="">Select Question</option>
-                {allQuestions
-                  .filter(q => q.id !== question.id)
-                  .map(q => (
-                    <option key={q.id} value={q.id}>
-                      {q.question.substring(0, 25)}...
-                    </option>
-                  ))}
-              </select>
-              <select
-                value={question.conditional.condition || 'equals'}
-                onChange={(e) => updateConditional('condition', e.target.value)}
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-              >
-                <option value="equals">Equals</option>
-                <option value="not_equals">Not Equals</option>
-                <option value="contains">Contains</option>
-              </select>
+            </div>
+          ) : question.type === 'file-upload' ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Allowed File Types (comma-separated)
+              </label>
               <input
                 type="text"
-                value={question.conditional.value || ''}
-                onChange={(e) => updateConditional('value', e.target.value)}
-                placeholder="Value"
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                value={question.validation?.allowedTypes?.join(', ') || ''}
+                onChange={(e) => onUpdate({ 
+                  validation: { 
+                    ...question.validation, 
+                    allowedTypes: e.target.value.split(',').map(t => t.trim()).filter(Boolean)
+                  }
+                })}
+                placeholder=".pdf, .doc, .docx"
+                className="w-full p-2 border border-gray-300 rounded"
               />
             </div>
+          ) : null}
+
+          {/* Conditional Logic */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Conditional Logic
+            </label>
+            <select
+              value={question.conditional?.dependsOn || ''}
+              onChange={(e) => {
+                if (!e.target.value) {
+                  onUpdate({ conditional: null });
+                } else {
+                  onUpdate({ 
+                    conditional: { 
+                      dependsOn: e.target.value,
+                      condition: 'equals',
+                      value: ''
+                    }
+                  });
+                }
+              }}
+              className="w-full p-2 border border-gray-300 rounded mb-2"
+            >
+              <option value="">No conditions</option>
+              {allQuestions.map((q, index) => (
+                index < questionIndex && (
+                  <option key={q.id} value={q.id}>
+                    Show if Q{index + 1} ({q.question.slice(0, 30)}...)
+                  </option>
+                )
+              ))}
+            </select>
+            
+            {question.conditional && (
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={question.conditional.condition}
+                  onChange={(e) => onUpdate({ 
+                    conditional: { ...question.conditional, condition: e.target.value }
+                  })}
+                  className="p-2 border border-gray-300 rounded"
+                >
+                  <option value="equals">equals</option>
+                  <option value="not_equals">not equals</option>
+                  <option value="contains">contains</option>
+                </select>
+                <input
+                  type="text"
+                  value={question.conditional.value}
+                  onChange={(e) => onUpdate({ 
+                    conditional: { ...question.conditional, value: e.target.value }
+                  })}
+                  placeholder="Value"
+                  className="p-2 border border-gray-300 rounded"
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const AssessmentPreview = ({ assessment, activeSection, responses, validationErrors, onResponseChange }) => {
-  const sectionsToShow = activeSection !== null 
-    ? [assessment.sections[activeSection]].filter(Boolean)
-    : assessment.sections;
+const AssessmentPreview = ({ assessment }) => {
+  const [responses, setResponses] = useState({});
+  const [currentSection, setCurrentSection] = useState(0);
+
+  const handleResponseChange = (questionId, value) => {
+    setResponses(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const shouldShowQuestion = (question) => {
+    if (!question.conditional) return true;
+    
+    const { dependsOn, condition, value } = question.conditional;
+    const dependentResponse = responses[dependsOn];
+    
+    switch (condition) {
+      case 'equals': return dependentResponse === value;
+      case 'not_equals': return dependentResponse !== value;
+      case 'contains': return Array.isArray(dependentResponse) && dependentResponse.includes(value);
+      default: return true;
+    }
+  };
+
+  const validateResponse = (question, response) => {
+    const errors = [];
+    
+    if (question.required && (!response || response === '')) {
+      errors.push('This field is required');
+    }
+    
+    if (response && question.validation) {
+      const { maxLength, min, max } = question.validation;
+      
+      if (maxLength && response.length > maxLength) {
+        errors.push(`Maximum ${maxLength} characters allowed`);
+      }
+      
+      if (question.type === 'numeric') {
+        const num = parseFloat(response);
+        if (isNaN(num)) {
+          errors.push('Must be a valid number');
+        } else {
+          if (min !== undefined && num < min) errors.push(`Minimum value is ${min}`);
+          if (max !== undefined && num > max) errors.push(`Maximum value is ${max}`);
+        }
+      }
+    }
+    
+    return errors;
+  };
+
+  if (!assessment.sections.length) {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+        <p>Add sections and questions to see the preview</p>
+      </div>
+    );
+  }
+
+  const currentSectionData = assessment.sections[currentSection];
+  const visibleQuestions = currentSectionData.questions.filter(shouldShowQuestion);
 
   return (
-    <div className="space-y-6">
-      <h3 className="text-lg font-semibold">{assessment.title}</h3>
-      {activeSection !== null && (
-        <div className="text-sm text-gray-500 bg-blue-50 px-3 py-2 rounded">
-          Previewing: {assessment.sections[activeSection]?.title} section
+    <div className="p-6">
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-2">{assessment.title}</h2>
+        
+        {/* Section Navigation */}
+        <div className="flex space-x-1 mb-4">
+          {assessment.sections.map((section, index) => (
+            <button
+              key={section.id}
+              onClick={() => setCurrentSection(index)}
+              className={`px-3 py-2 rounded text-sm font-medium ${
+                index === currentSection
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {section.title}
+            </button>
+          ))}
         </div>
-      )}
-      
-      {sectionsToShow.map((section, sectionIndex) => (
-        <div key={section.id} className="border rounded-lg p-4">
-          <h4 className="font-medium mb-4">{section.title}</h4>
+      </div>
+
+      {/* Questions */}
+      <div className="space-y-6">
+        {visibleQuestions.map((question, index) => {
+          const errors = validateResponse(question, responses[question.id]);
           
-          {section.questions.map((question, questionIndex) => {
-            if (!shouldShowQuestion(question, responses)) return null;
-            
-            return (
-              <div key={question.id} className="mb-4">
-                <label className="block font-medium mb-2">
-                  {question.question}
+          return (
+            <div key={question.id} className="border rounded-lg p-4">
+              <div className="mb-3">
+                <label className="block font-medium text-gray-900">
+                  {index + 1}. {question.question}
                   {question.required && <span className="text-red-500 ml-1">*</span>}
                 </label>
-                
-                <QuestionInput
-                  question={question}
-                  value={responses[question.id] || ''}
-                  onChange={(value) => onResponseChange(question.id, value)}
-                  error={validationErrors[question.id]}
-                />
               </div>
-            );
-          })}
+              
+              <QuestionInput
+                question={question}
+                value={responses[question.id] || ''}
+                onChange={(value) => handleResponseChange(question.id, value)}
+                error={errors}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {visibleQuestions.length === 0 && (
+        <div className="text-center text-gray-500 py-8">
+          <p>No questions in this section</p>
         </div>
-      ))}
+      )}
     </div>
   );
 };
@@ -702,46 +745,50 @@ const QuestionInput = ({ question, value, onChange, error }) => {
     case 'single-choice':
       return (
         <div>
-          {question.options.map((option, index) => (
-            <label key={index} className="flex items-center mb-2">
-              <input
-                type="radio"
-                name={question.id}
-                value={option}
-                checked={value === option}
-                onChange={(e) => onChange(e.target.value)}
-                className="mr-2"
-              />
-              {option}
-            </label>
-          ))}
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          <div className="space-y-2">
+            {question.options?.map((option, index) => (
+              <label key={index} className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                <input
+                  type="radio"
+                  name={question.id}
+                  value={option}
+                  checked={value === option}
+                  onChange={(e) => onChange(e.target.value)}
+                  className="mr-3"
+                />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 
     case 'multi-choice':
       return (
         <div>
-          {question.options.map((option, index) => (
-            <label key={index} className="flex items-center mb-2">
-              <input
-                type="checkbox"
-                value={option}
-                checked={Array.isArray(value) && value.includes(option)}
-                onChange={(e) => {
-                  const currentValues = Array.isArray(value) ? value : [];
-                  if (e.target.checked) {
-                    onChange([...currentValues, option]);
-                  } else {
-                    onChange(currentValues.filter(v => v !== option));
-                  }
-                }}
-                className="mr-2"
-              />
-              {option}
-            </label>
-          ))}
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          <div className="space-y-2">
+            {question.options?.map((option, index) => (
+              <label key={index} className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  value={option}
+                  checked={Array.isArray(value) && value.includes(option)}
+                  onChange={(e) => {
+                    const currentValues = Array.isArray(value) ? value : [];
+                    if (e.target.checked) {
+                      onChange([...currentValues, option]);
+                    } else {
+                      onChange(currentValues.filter(v => v !== option));
+                    }
+                  }}
+                  className="mr-3"
+                />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 
@@ -752,10 +799,16 @@ const QuestionInput = ({ question, value, onChange, error }) => {
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             maxLength={question.validation?.maxLength}
+            placeholder="Enter your answer..."
           />
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          {question.validation?.maxLength && (
+            <div className="text-sm text-gray-500 mt-1">
+              {value.length}/{question.validation.maxLength} characters
+            </div>
+          )}
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 
@@ -765,10 +818,16 @@ const QuestionInput = ({ question, value, onChange, error }) => {
           <textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full p-2 border rounded h-24"
+            className="w-full p-3 border rounded-lg h-32 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             maxLength={question.validation?.maxLength}
+            placeholder="Enter your detailed answer..."
           />
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          {question.validation?.maxLength && (
+            <div className="text-sm text-gray-500 mt-1">
+              {value.length}/{question.validation.maxLength} characters
+            </div>
+          )}
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 
@@ -779,24 +838,50 @@ const QuestionInput = ({ question, value, onChange, error }) => {
             type="number"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             min={question.validation?.min}
             max={question.validation?.max}
+            placeholder="Enter a number..."
           />
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          {(question.validation?.min !== undefined || question.validation?.max !== undefined) && (
+            <div className="text-sm text-gray-500 mt-1">
+              Range: {question.validation?.min || 'No minimum'} - {question.validation?.max || 'No maximum'}
+            </div>
+          )}
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 
     case 'file-upload':
       return (
         <div>
-          <input
-            type="file"
-            onChange={(e) => onChange(e.target.files[0]?.name || '')}
-            className="w-full p-2 border rounded"
-            accept={question.validation?.allowedTypes?.join(',')}
-          />
-          {error && <div className="text-red-500 text-sm mt-1">{error.join(', ')}</div>}
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400">
+            <input
+              type="file"
+              onChange={(e) => onChange(e.target.files[0]?.name || '')}
+              className="hidden"
+              id={`file-${question.id}`}
+              accept={question.validation?.allowedTypes?.join(',')}
+            />
+            <label htmlFor={`file-${question.id}`} className="cursor-pointer">
+              <div className="text-gray-600">
+                <Upload className="w-8 h-8 mx-auto mb-2" />
+                <div className="font-medium">Click to upload file</div>
+                <div className="text-sm">
+                  {question.validation?.allowedTypes?.length > 0 
+                    ? `Allowed: ${question.validation.allowedTypes.join(', ')}`
+                    : 'Any file type'
+                  }
+                </div>
+              </div>
+            </label>
+          </div>
+          {value && (
+            <div className="mt-2 text-sm text-green-600">
+              Selected: {value}
+            </div>
+          )}
+          {error?.length > 0 && <div className="text-red-500 text-sm mt-2">{error.join(', ')}</div>}
         </div>
       );
 

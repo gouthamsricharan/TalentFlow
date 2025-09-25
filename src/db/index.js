@@ -1,6 +1,6 @@
 import { jobsDB, seedJobs, getJob, getAllJobs, updateJob, saveJob } from './jobs.js';
 import { candidatesDB, seedCandidates, getCandidatesByJob, getCandidate, updateCandidate, addTimelineEntry, getCandidateTimeline } from './candidates.js';
-import { assessmentsDB, seedAssessments, getAssessmentByJob, getAssessmentsByJob, getAssessment, saveAssessment, updateAssessment, saveResponse, getResponse, saveDraftResponse, getDraftResponse, saveAssessmentWithResponses, getAssessmentWithResponses, generateAssessmentForJob, saveBuilderState, getBuilderState, clearBuilderState, deleteAssessment } from './assessments.js';
+import { assessmentsDB, seedAssessments, getAssessmentByJob, getAssessmentsByJob, getAssessment, saveAssessment, updateAssessment, saveResponse, getResponse, saveDraftResponse, getDraftResponse, saveAssessmentWithResponses, getAssessmentWithResponses, generateAssessmentForJob, saveBuilderState, getBuilderState, clearBuilderState, deleteAssessment, hasSubmittedResponse, seedAssessmentResponses } from './assessments.js';
 
 // Auto-initialize database when this module is imported
 const initializeDatabase = async () => {
@@ -22,10 +22,33 @@ const initializeDatabase = async () => {
         console.log('✅ Seeded candidates for existing jobs');
       }
       if (existingAssessments === 0) {
-        console.log('⚠️ Assessments missing. Seeding question bank and enabling generation on demand...');
+        console.log('⚠️ Assessments missing. Seeding question bank and creating assessments...');
         const jobs = await jobsDB.jobs.toArray();
         await seedAssessments(jobs);
-        console.log('✅ Assessment question bank seeded');
+        
+        // Generate pre-developed assessment for each existing job
+        const assessments = [];
+        for (const job of jobs) {
+          const assessment = await generateAssessmentForJob(job, 'applied');
+          assessments.push(assessment);
+        }
+        
+        // Generate sample responses for some candidates
+        const jobIds = jobs.map(j => j.id);
+        await seedAssessmentResponses(assessments, jobIds);
+        console.log('✅ Assessment question bank seeded, assessments created, and sample responses generated');
+      } else {
+        // Check if all jobs have assessments, create missing ones
+        const jobs = await jobsDB.jobs.toArray();
+        const existingAssessmentJobs = await assessmentsDB.assessments.where('stage').equals('applied').toArray();
+        const existingJobIds = new Set(existingAssessmentJobs.map(a => a.jobId));
+        
+        for (const job of jobs) {
+          if (!existingJobIds.has(job.id)) {
+            console.log(`Creating missing assessment for job: ${job.title}`);
+            await generateAssessmentForJob(job, 'applied');
+          }
+        }
       }
       console.log('✅ Database already initialized/backfilled');
       return;
@@ -43,9 +66,20 @@ const initializeDatabase = async () => {
     console.log('✅ Created 1000 candidates with timeline');
     console.log(candidatesDB.candidates);
 
-    // Seed assessments question bank
+    // Seed assessments question bank and create assessments for each job
     await seedAssessments(jobs);
-    console.log('✅ Created comprehensive assessments');
+    
+    // Generate pre-developed assessment for each job
+    const assessments = [];
+    for (const job of jobs) {
+      console.log(`Creating assessment for job: ${job.title} (ID: ${job.id})`);
+      const assessment = await generateAssessmentForJob(job, 'applied');
+      assessments.push(assessment);
+    }
+    
+    // Generate sample responses for some candidates
+    await seedAssessmentResponses(assessments, jobIds);
+    console.log(`✅ Created ${assessments.length} assessments and sample responses`);
 
     console.log('✅ Database initialization complete!');
     return { jobs, jobIds };
@@ -89,10 +123,30 @@ export {
   saveBuilderState,
   getBuilderState,
   clearBuilderState,
-  deleteAssessment
+  deleteAssessment,
+  hasSubmittedResponse,
+  seedAssessmentResponses
 };
 
 // Global reset function
 if (typeof window !== 'undefined') {
   window.resetModularDB = initializeDatabase;
+  
+  // Manual assessment creation function
+  window.createAllAssessments = async () => {
+    const jobs = await getAllJobs();
+    console.log(`Creating assessments for ${jobs.length} jobs...`);
+    
+    for (const job of jobs) {
+      const existing = await getAssessmentByJob(job.id, 'applied');
+      if (!existing) {
+        console.log(`Creating assessment for: ${job.title}`);
+        await generateAssessmentForJob(job, 'applied');
+      } else {
+        console.log(`Assessment exists for: ${job.title}`);
+      }
+    }
+    
+    console.log('Assessment creation complete!');
+  };
 }

@@ -282,7 +282,7 @@ export function makeServer({ environment = 'development' } = {}) {
         try {
           await delay()
           maybeError(0.02)
-          return await getAssessmentByJob(parseInt(request.params.jobId))
+          return await getAssessmentByJob(parseInt(request.params.jobId), 'applied')
         } catch (error) {
           return new Response(JSON.stringify({ error: error.message }), { status: error.status || 500 })
         }
@@ -332,13 +332,13 @@ export function makeServer({ environment = 'development' } = {}) {
           maybeError(0.05)
           const jobId = parseInt(request.params.jobId)
           const data = JSON.parse(request.requestBody)
-          const existing = await getAssessmentByJob(jobId)
+          const existing = await getAssessmentByJob(jobId, 'applied')
           if (existing) {
             await updateAssessment(existing.id, { ...data, updatedAt: new Date() })
             return await getAssessment(existing.id)
           }
-          const assessment = await saveAssessment({ ...data, jobId, createdAt: new Date(), updatedAt: new Date() })
-          return assessment
+          const assessmentId = await saveAssessment({ ...data, jobId, stage: 'applied', createdAt: new Date(), updatedAt: new Date() })
+          return await getAssessment(assessmentId)
         } catch (error) {
           return new Response(JSON.stringify({ error: error.message }), { status: error.status || 500 })
         }
@@ -385,22 +385,28 @@ export function makeServer({ environment = 'development' } = {}) {
           await delay()
           maybeError(0.02)
           const { id, candidateId } = request.params
+          console.log(`🔍 MirageJS: Fetching assessment ${id} for candidate ${candidateId}`);
           
           const assessment = await getAssessment(parseInt(id))
           const candidate = await getCandidate(parseInt(candidateId))
           
+          console.log(`📊 Assessment found: ${!!assessment}, Candidate found: ${!!candidate}`);
+          
           if (!assessment || !candidate) {
+            console.log('❌ Assessment or candidate not found');
             return new Response(JSON.stringify({ error: 'Assessment or candidate not found' }), {
               status: 404,
               headers: { 'Content-Type': 'application/json' }
             })
           }
           
+          console.log('✅ Returning assessment and candidate data');
           return new Response(JSON.stringify({ assessment, candidate }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
           })
         } catch (error) {
+          console.error('❌ MirageJS assessment endpoint error:', error);
           return new Response(JSON.stringify({ error: error.message }), {
             status: error.status || 500,
             headers: { 'Content-Type': 'application/json' }
@@ -430,6 +436,35 @@ export function makeServer({ environment = 'development' } = {}) {
             jobId: assessment.jobId,
             stage: assessment.stage,
             assessmentId: parseInt(id),
+            responses: data.responses,
+            submittedAt: new Date()
+          })
+          
+          return new Response(JSON.stringify({ success: true, responseId: response }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          })
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: error.status || 500,
+            headers: { 'Content-Type': 'application/json' }
+          })
+        }
+      })
+
+      // Assessment submission endpoint
+      this.post('/assessments/:jobId/submit', async (schema, request) => {
+        try {
+          await delay()
+          maybeError(0.05)
+          const jobId = parseInt(request.params.jobId)
+          const data = JSON.parse(request.requestBody)
+          
+          const response = await saveResponse({
+            candidateId: data.candidateId,
+            jobId: jobId,
+            stage: 'applied',
+            assessmentId: data.assessmentId,
             responses: data.responses,
             submittedAt: new Date()
           })
@@ -476,6 +511,27 @@ export function makeServer({ environment = 'development' } = {}) {
           const { candidateId, assessmentId } = request.params
           const response = await getResponse(parseInt(candidateId), parseInt(assessmentId))
           return response || null
+        } catch (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: error.status || 500 })
+        }
+      })
+
+      // Assessment results endpoint
+      this.get('/assessment-results/:assessmentId/:candidateId', async (schema, request) => {
+        try {
+          await delay()
+          const { assessmentId, candidateId } = request.params
+          console.log(`📊 Fetching results for assessment ${assessmentId}, candidate ${candidateId}`);
+          
+          const assessment = await getAssessment(parseInt(assessmentId))
+          const candidate = await getCandidate(parseInt(candidateId))
+          const response = await getResponse(parseInt(candidateId), parseInt(assessmentId))
+          
+          if (!assessment || !candidate || !response) {
+            return new Response(JSON.stringify({ error: 'Data not found' }), { status: 404 })
+          }
+          
+          return { assessment, candidate, response }
         } catch (error) {
           return new Response(JSON.stringify({ error: error.message }), { status: error.status || 500 })
         }

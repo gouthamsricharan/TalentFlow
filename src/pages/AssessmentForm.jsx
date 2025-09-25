@@ -12,11 +12,56 @@ import {
   saveAssessmentWithResponses,
   getAssessmentWithResponses,
   validateResponse,
-  shouldShowQuestion 
+  shouldShowQuestion,
+  hasSubmittedResponse
 } from '../db/assessments';
 
+// Validation functions
+const validateQuestionResponse = (question, response) => {
+  const errors = [];
+  
+  if (question.required && (!response || response === '')) {
+    errors.push('This field is required');
+  }
+  
+  if (response && question.validation) {
+    const { maxLength, min, max } = question.validation;
+    
+    if (maxLength && response.length > maxLength) {
+      errors.push(`Maximum ${maxLength} characters allowed`);
+    }
+    
+    if (question.type === 'numeric') {
+      const num = parseFloat(response);
+      if (isNaN(num)) {
+        errors.push('Must be a valid number');
+      } else {
+        if (min !== undefined && num < min) errors.push(`Minimum value is ${min}`);
+        if (max !== undefined && num > max) errors.push(`Maximum value is ${max}`);
+      }
+    }
+  }
+  
+  return errors;
+};
+
+const shouldShowQuestionConditional = (question, responses) => {
+  if (!question.conditional) return true;
+  
+  const { dependsOn, condition, value } = question.conditional;
+  const dependentResponse = responses[dependsOn];
+  
+  switch (condition) {
+    case 'equals': return dependentResponse === value;
+    case 'not_equals': return dependentResponse !== value;
+    case 'contains': return Array.isArray(dependentResponse) && dependentResponse.includes(value);
+    default: return true;
+  }
+};
+
 const AssessmentForm = () => {
-  const { jobId, candidateId } = useParams();
+  const { jobId, candidateId, assessmentId } = useParams();
+  const actualCandidateId = candidateId || useParams().candidateId;
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
   const [candidate, setCandidate] = useState(null);
@@ -28,36 +73,45 @@ const AssessmentForm = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   useEffect(() => {
+    console.log('🚀 AssessmentForm mounted with params:', { jobId, candidateId, assessmentId });
+    console.log('🚀 Current URL:', window.location.href);
     loadData();
-  }, [jobId, candidateId]);
+  }, [jobId, candidateId, assessmentId]);
 
   const loadData = async () => {
     try {
       const candidateData = await getCandidate(parseInt(candidateId));
       setCandidate(candidateData);
       
-      // Check if jobId is actually an assessment ID (for /assessment/:assessmentId/candidate/:candidateId route)
       let assessmentData, jobData;
       
-      // First try to get assessment by ID (assuming jobId is actually assessmentId)
-      try {
-        assessmentData = await getAssessment(parseInt(jobId));
-        if (assessmentData) {
-          // Get job data using the assessment's jobId
-          jobData = await getJob(assessmentData.jobId);
+      if (assessmentId) {
+        // Route: /assessment/:assessmentId/candidate/:candidateId - use API
+        console.log('Fetching via assessmentId API:', assessmentId);
+        const response = await fetch(`/api/assessments/${assessmentId}/candidates/${candidateId}`);
+        if (response.ok) {
+          const data = await response.json();
+          assessmentData = data.assessment;
+          jobData = await getJob(data.assessment.jobId);
+        } else {
+          console.error('API fetch failed:', response.status, await response.text());
         }
-      } catch (error) {
-        console.log('Not an assessment ID, trying as job ID');
-      }
-      
-      // If that failed, try treating it as a job ID
-      if (!assessmentData) {
+      } else if (jobId) {
+        // Route: /assessment/:jobId/candidate/:candidateId or /jobs/:jobId/assessment/:candidateId
+        console.log('Fetching via jobId:', jobId);
         jobData = await getJob(parseInt(jobId));
-        assessmentData = await getAssessmentByJob(parseInt(jobId));
+        assessmentData = await getAssessmentByJob(parseInt(jobId), 'applied');
+        console.log('Direct fetch results:', { jobData: !!jobData, assessmentData: !!assessmentData });
       }
       
       setJob(jobData);
       setAssessment(assessmentData);
+      
+      console.log('Loaded data:', { 
+        job: jobData?.title, 
+        assessment: assessmentData?.title,
+        candidate: candidateData?.name 
+      });
 
       // Validate candidate stage matches assessment stage
       if (assessmentData && candidateData && assessmentData.stage !== candidateData.stage) {
@@ -69,14 +123,19 @@ const AssessmentForm = () => {
         return;
       }
 
-      // Check if already submitted or has draft
+      // Check if already submitted
       if (assessmentData) {
-        const existingResponse = await getResponse(parseInt(candidateId), assessmentData.id);
-        if (existingResponse && existingResponse.submittedAt) {
+        const isSubmitted = await hasSubmittedResponse(parseInt(candidateId), assessmentData.id);
+        if (isSubmitted) {
+          const existingResponse = await getResponse(parseInt(candidateId), assessmentData.id);
           setResponses(existingResponse.responses);
           setIsSubmitted(true);
         } else {
-
+          // Load draft if exists
+          const draft = await getDraftResponse(parseInt(candidateId), assessmentData.id);
+          if (draft) {
+            setResponses(draft.responses);
+          }
         }
       }
     } catch (error) {
@@ -93,6 +152,14 @@ const AssessmentForm = () => {
       delete newErrors[questionId];
       return newErrors;
     });
+    
+    // Auto-save draft every few seconds
+    if (!isSubmitted) {
+      clearTimeout(window.draftSaveTimeout);
+      window.draftSaveTimeout = setTimeout(() => {
+        saveDraftResponse(parseInt(candidateId), assessment.id, { ...responses, [questionId]: value });
+      }, 2000);
+    }
   };
 
   const validateSection = (sectionIndex) => {
@@ -101,10 +168,10 @@ const AssessmentForm = () => {
     let hasErrors = false;
 
     section.questions.forEach(question => {
-      if (!shouldShowQuestion(question, responses)) return;
+      if (!shouldShowQuestionConditional(question, responses)) return;
       
       const response = responses[question.id];
-      const questionErrors = validateResponse(question, response);
+      const questionErrors = validateQuestionResponse(question, response);
       
       if (questionErrors.length > 0) {
         errors[question.id] = questionErrors;
@@ -142,17 +209,43 @@ const AssessmentForm = () => {
 
     setIsSubmitting(true);
     try {
-      await saveResponse({
-        candidateId: parseInt(candidateId),
-        jobId: assessment.jobId,
-        assessmentId: assessment.id,
-        responses,
-        submittedAt: new Date()
-      });
+      if (assessmentId) {
+        // Use API for assessmentId route
+        const response = await fetch(`/api/assessments/${assessment.id}/candidates/${candidateId}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ responses })
+        });
+        if (!response.ok) throw new Error('Submission failed');
+      } else if (jobId) {
+        // Use job-based submission endpoint
+        const response = await fetch(`/api/assessments/${jobId}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            candidateId: parseInt(candidateId),
+            assessmentId: assessment.id,
+            responses 
+          })
+        });
+        if (!response.ok) throw new Error('Submission failed');
+      } else {
+        // Use direct DB for other routes
+        await saveResponse({
+          candidateId: parseInt(candidateId),
+          jobId: assessment.jobId,
+          stage: assessment.stage,
+          assessmentId: assessment.id,
+          responses
+        });
+      }
       
       setIsSubmitted(true);
-      alert('Assessment submitted successfully!');
+      setTimeout(() => {
+        navigate(`/assessment-results/${assessment.id}/${candidateId}`);
+      }, 2000);
     } catch (error) {
+      console.error('Submission error:', error);
       alert('Error submitting assessment. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -162,7 +255,7 @@ const AssessmentForm = () => {
 
 
   const getVisibleQuestions = (section) => {
-    return section.questions.filter(question => shouldShowQuestion(question, responses));
+    return section.questions.filter(question => shouldShowQuestionConditional(question, responses));
   };
 
   const getProgress = () => {
@@ -173,8 +266,12 @@ const AssessmentForm = () => {
     return Math.round((answeredQuestions / totalQuestions) * 100);
   };
 
-  if (!job || !candidate) {
-    return <div className="p-8">Loading assessment...</div>;
+  if (!candidate) {
+    return <div className="p-8">Loading candidate data...</div>;
+  }
+  
+  if (!job && jobId) {
+    return <div className="p-8">Loading job data...</div>;
   }
 
   if (!assessment) {
@@ -229,7 +326,7 @@ const AssessmentForm = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{assessment.title}</h1>
-              <p className="text-gray-600">{job.title} • {candidate.name}</p>
+              <p className="text-gray-600">{job.title}</p>
             </div>
             <div className="text-right">
               <div className="text-sm text-gray-500">Progress</div>
