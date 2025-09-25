@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import Home from './pages/Home'
 import JobsBoard from './pages/JobsBoard'
 import JobDetails from './pages/JobDetails'
 import CandidatesList from './pages/CandidatesList'
@@ -17,7 +18,7 @@ function App() {
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<Navigate to="/jobs" replace />} />
+          <Route path="/" element={<Home />} />
           <Route path="/jobs" element={<JobsBoard />} />
           <Route path="/jobs/:id" element={<JobDetails />} />
           <Route path="/jobs/:jobId/assessment/builder" element={<AssessmentBuilder />} />
